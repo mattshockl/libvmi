@@ -64,13 +64,21 @@ typedef struct driver_interface {
         addr_t *);
     status_t (*get_vcpureg_ptr) (
         vmi_instance_t,
-        reg_t *,
-        registers_t,
+        uint64_t *,
+        reg_t,
+        unsigned long);
+    status_t (*get_vcpuregs_ptr) (
+        vmi_instance_t,
+        registers_t *,
         unsigned long);
     status_t(*set_vcpureg_ptr) (
         vmi_instance_t,
+        uint64_t,
         reg_t,
-        registers_t,
+        unsigned long);
+    status_t(*set_vcpuregs_ptr) (
+        vmi_instance_t,
+        registers_t *,
         unsigned long);
     status_t (*get_address_width_ptr) (
         vmi_instance_t vmi,
@@ -168,9 +176,9 @@ typedef struct driver_interface {
 } driver_interface_t;
 
 status_t driver_init_mode(
-    vmi_instance_t vmi,
+    const char *name,
     uint64_t domainid,
-    const char *name);
+    vmi_mode_t *mode);
 
 status_t driver_init(
     vmi_instance_t vmi);

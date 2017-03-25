@@ -43,7 +43,7 @@ windows_read_unicode_struct(
     addr_t buffer_va = 0;
     uint16_t buffer_len = 0;
 
-    if (VMI_PM_IA32E == vmi_get_page_mode(vmi)) {   // 64 bit guest
+    if (VMI_PM_IA32E == vmi->page_mode) {   // 64 bit guest
         win64_unicode_string_t us64 = { 0 };
         struct_size = sizeof(us64);
         // read the UNICODE_STRING struct
@@ -69,10 +69,15 @@ windows_read_unicode_struct(
     }   // if-else
 
     // allocate the return value
-    us = safe_malloc(sizeof(unicode_string_t));
+    us = g_malloc0(sizeof(unicode_string_t));
+    if ( !us )
+        return NULL;
 
     us->length = buffer_len;
-    us->contents = safe_malloc(sizeof(uint8_t) * (buffer_len + 2));
+    us->contents = g_malloc0(sizeof(uint8_t) * (buffer_len + 2));
+
+    if ( !us->contents )
+        goto out_error;
 
     _ctx.addr = buffer_va;
     read = vmi_read(vmi, &_ctx, us->contents, us->length);
@@ -93,9 +98,9 @@ windows_read_unicode_struct(
 out_error:
     if (us) {
         if (us->contents) {
-            free(us->contents);
+            g_free(us->contents);
         }
-        free(us);
+        g_free(us);
     }
     return 0;
 }

@@ -30,13 +30,6 @@
 /* NB: Necessary for windows specific API functions */
 #include "os/windows/windows.h"
 
-page_mode_t
-vmi_get_page_mode(
-    vmi_instance_t vmi)
-{
-    return vmi->page_mode;
-}
-
 uint8_t vmi_get_address_width(
     vmi_instance_t vmi)
 {
@@ -45,13 +38,6 @@ uint8_t vmi_get_address_width(
     driver_get_address_width(vmi, &width);
 
     return width;
-}
-
-uint32_t
-vmi_get_access_mode(
-    vmi_instance_t vmi)
-{
-    return vmi->mode;
 }
 
 os_t
@@ -71,7 +57,7 @@ vmi_get_winver(
 #else
     windows_instance_t windows_instance = NULL;
 
-    if (VMI_OS_WINDOWS != vmi->os_type || (VMI_INIT_PARTIAL & vmi->init_mode))
+    if (VMI_OS_WINDOWS != vmi->os_type)
         return VMI_OS_WINDOWS_NONE;
 
     if (!vmi->os_data) {
@@ -175,21 +161,39 @@ vmi_get_num_vcpus(
 status_t
 vmi_get_vcpureg(
     vmi_instance_t vmi,
-    reg_t *value,
-    registers_t reg,
+    uint64_t *value,
+    reg_t reg,
     unsigned long vcpu)
 {
     return driver_get_vcpureg(vmi, value, reg, vcpu);
 }
 
 status_t
+vmi_get_vcpuregs(
+    vmi_instance_t vmi,
+    registers_t *regs,
+    unsigned long vcpu)
+{
+    return driver_get_vcpuregs(vmi, regs, vcpu);
+}
+
+status_t
 vmi_set_vcpureg(
     vmi_instance_t vmi,
-    reg_t value,
-    registers_t reg,
+    uint64_t value,
+    reg_t reg,
     unsigned long vcpu)
 {
     return driver_set_vcpureg(vmi, value, reg, vcpu);
+}
+
+status_t
+vmi_set_vcpuregs(
+    vmi_instance_t vmi,
+    registers_t *regs,
+    unsigned long vcpu)
+{
+    return driver_set_vcpuregs(vmi, regs, vcpu);
 }
 
 status_t
@@ -524,7 +528,7 @@ vmi_get_linux_sysmap(
 {
     linux_instance_t linux_instance = NULL;
 
-    if(VMI_OS_LINUX != vmi->os_type || (VMI_INIT_PARTIAL & vmi->init_mode)){
+    if(VMI_OS_LINUX != vmi->os_type){
         return NULL;
     }
 

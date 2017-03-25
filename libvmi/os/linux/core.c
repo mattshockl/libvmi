@@ -296,34 +296,38 @@ status_t init_kaslr(vmi_instance_t vmi) {
     return ret;
 }
 
-status_t linux_init(vmi_instance_t vmi) {
+status_t linux_init(vmi_instance_t vmi, GHashTable *config) {
 
     status_t rc;
     os_interface_t os_interface = NULL;
 
-    if (vmi->config == NULL) {
+    if (!config) {
         errprint("No config table found\n");
         return VMI_FAILURE;
     }
 
     if (vmi->os_data != NULL) {
         errprint("os data already initialized, reinitializing\n");
-        free(vmi->os_data);
+        g_free(vmi->os_data);
     }
 
-    vmi->os_data = safe_malloc(sizeof(struct linux_instance));
-    bzero(vmi->os_data, sizeof(struct linux_instance));
+    vmi->os_data = g_malloc0(sizeof(struct linux_instance));
+    if ( !vmi->os_data )
+        return VMI_FAILURE;
+
     linux_instance_t linux_instance = vmi->os_data;
 
-    g_hash_table_foreach(vmi->config, (GHFunc)linux_read_config_ghashtable_entries, vmi);
+    g_hash_table_foreach(config, (GHFunc)linux_read_config_ghashtable_entries, vmi);
 
     if(linux_instance->rekall_profile)
         rc = init_from_rekall_profile(vmi);
-    else
+    else if ( !vmi->init_task )
         rc = linux_symbol_to_address(vmi, "init_task", NULL, &vmi->init_task);
+    else
+        rc = VMI_SUCCESS;
 
-    if (VMI_FAILURE == rc) {
-        errprint("Could not get init_task from Rekall profile or System.map\n");
+    if ( VMI_FAILURE == rc ) {
+        errprint("Failed to determine init_task!\n");
         goto _exit;
     }
 
@@ -351,7 +355,10 @@ status_t linux_init(vmi_instance_t vmi) {
 
     dbprint(VMI_DEBUG_MISC, "**set vmi->kpgd (0x%.16"PRIx64").\n", vmi->kpgd);
 
-    os_interface = safe_malloc(sizeof(struct os_interface));
+    os_interface = g_malloc(sizeof(struct os_interface));
+    if ( !os_interface )
+        goto _exit;
+
     bzero(os_interface, sizeof(struct os_interface));
     os_interface->os_get_offset = linux_get_offset;
     os_interface->os_get_kernel_struct_offset = linux_get_kernel_struct_offset;
@@ -368,7 +375,7 @@ status_t linux_init(vmi_instance_t vmi) {
     return VMI_SUCCESS;
 
     _exit:
-    free(vmi->os_data);
+    g_free(vmi->os_data);
     vmi->os_data = NULL;
     return VMI_FAILURE;
 }
@@ -410,6 +417,11 @@ void linux_read_config_ghashtable_entries(char* key, gpointer value,
 
     if (strncmp(key, "linux_pgd", CONFIG_STR_LENGTH) == 0) {
         linux_instance->pgd_offset = *(addr_t *)value;
+        goto _done;
+    }
+
+    if (strncmp(key, "linux_init_task", CONFIG_STR_LENGTH) == 0) {
+        vmi->init_task = *(addr_t*)value;
         goto _done;
     }
 

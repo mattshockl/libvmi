@@ -63,20 +63,14 @@ gint swap_search_from(gconstpointer a, gconstpointer b)
 //----------------------------------------------------------------------------
 //  General event callback management.
 
-gboolean event_entry_free(gpointer UNUSED(key), gpointer value, gpointer data)
-{
-    vmi_instance_t vmi = (vmi_instance_t) data;
-    vmi_event_t *event = (vmi_event_t*) value;
-    vmi_clear_event(vmi, event, NULL);
-    return TRUE;
-}
-
-gboolean clear_events(gpointer key, gpointer value, gpointer data)
+gboolean clear_events(gpointer key, gpointer value, gpointer UNUSED(data))
 {
     vmi_event_t *event = *(vmi_event_t**) key;
     vmi_event_free_t free_event = (vmi_event_free_t) value;
-    vmi_instance_t vmi = (vmi_instance_t)data;
-    vmi_clear_event(vmi, event, free_event);
+
+    if ( free_event )
+        free_event(event, VMI_SUCCESS);
+
     return TRUE;
 }
 
@@ -86,8 +80,17 @@ void step_event_free(vmi_event_t *event, status_t rc)
         g_free(event);
 }
 
-void events_init(vmi_instance_t vmi)
+status_t events_init(vmi_instance_t vmi)
 {
+    switch (vmi->mode)
+    {
+        case VMI_XEN:
+            break;
+        default:
+            errprint("The selected hypervisor has no events support!\n");
+            return VMI_FAILURE;
+    };
+
     vmi->interrupt_events = g_hash_table_new_full(g_int_hash, g_int_equal, g_free, NULL);
     vmi->mem_events_on_gfn = g_hash_table_new_full(g_int64_hash, g_int64_equal, g_free, NULL);
     vmi->mem_events_generic = g_hash_table_new_full(g_int_hash, g_int_equal, g_free, NULL);
@@ -95,19 +98,15 @@ void events_init(vmi_instance_t vmi)
     vmi->msr_events = g_hash_table_new_full(g_int_hash, g_int_equal, g_free, NULL);
     vmi->ss_events = g_hash_table_new_full(g_int_hash, g_int_equal, g_free, NULL);
     vmi->clear_events = g_hash_table_new_full(g_int64_hash, g_int64_equal, g_free, NULL);
+
+    return VMI_SUCCESS;
 }
 
 void events_destroy(vmi_instance_t vmi)
 {
-    if (!(vmi->init_mode & VMI_INIT_EVENTS))
-    {
-        return;
-    }
-
     if (vmi->mem_events_on_gfn)
     {
         dbprint(VMI_DEBUG_EVENTS, "Destroying memaccess on gfn events\n");
-        g_hash_table_foreach_remove(vmi->mem_events_on_gfn, event_entry_free, vmi);
         g_hash_table_destroy(vmi->mem_events_on_gfn);
         vmi->mem_events_on_gfn = NULL;
     }
@@ -115,7 +114,6 @@ void events_destroy(vmi_instance_t vmi)
     if (vmi->mem_events_generic)
     {
         dbprint(VMI_DEBUG_EVENTS, "Destroying memaccess generic events\n");
-        g_hash_table_foreach_remove(vmi->mem_events_generic, event_entry_free, vmi);
         g_hash_table_destroy(vmi->mem_events_generic);
         vmi->mem_events_generic = NULL;
     }
@@ -123,7 +121,6 @@ void events_destroy(vmi_instance_t vmi)
     if (vmi->reg_events)
     {
         dbprint(VMI_DEBUG_EVENTS, "Destroying register events\n");
-        g_hash_table_foreach_remove(vmi->reg_events, event_entry_free, vmi);
         g_hash_table_destroy(vmi->reg_events);
         vmi->reg_events = NULL;
     }
@@ -131,7 +128,6 @@ void events_destroy(vmi_instance_t vmi)
     if (vmi->msr_events)
     {
         dbprint(VMI_DEBUG_EVENTS, "Destroying MSR events\n");
-        g_hash_table_foreach_remove(vmi->msr_events, event_entry_free, vmi);
         g_hash_table_destroy(vmi->msr_events);
         vmi->msr_events = NULL;
     }
@@ -151,7 +147,6 @@ void events_destroy(vmi_instance_t vmi)
     if (vmi->ss_events)
     {
         dbprint(VMI_DEBUG_EVENTS, "Destroying singlestep events\n");
-        g_hash_table_foreach_remove(vmi->ss_events, event_entry_free, vmi);
         g_hash_table_destroy(vmi->ss_events);
         vmi->ss_events = NULL;
     }
@@ -159,7 +154,6 @@ void events_destroy(vmi_instance_t vmi)
     if (vmi->interrupt_events)
     {
         dbprint(VMI_DEBUG_EVENTS, "Destroying interrupt events\n");
-        g_hash_table_foreach_remove(vmi->interrupt_events, event_entry_free, vmi);
         g_hash_table_destroy(vmi->interrupt_events);
         vmi->interrupt_events = NULL;
     }
@@ -647,7 +641,7 @@ status_t swap_events(vmi_instance_t vmi, vmi_event_t *swap_from, vmi_event_t *sw
 //----------------------------------------------------------------------------
 // Public event functions.
 
-vmi_event_t *vmi_get_reg_event(vmi_instance_t vmi, registers_t reg)
+vmi_event_t *vmi_get_reg_event(vmi_instance_t vmi, reg_t reg)
 {
     return g_hash_table_lookup(vmi->reg_events, &reg);
 }
@@ -737,7 +731,7 @@ status_t vmi_register_event(vmi_instance_t vmi, vmi_event_t* event)
 {
     status_t rc = VMI_FAILURE;
 
-    if (!(vmi->init_mode & VMI_INIT_EVENTS))
+    if (!(vmi->init_flags & VMI_INIT_EVENTS))
     {
         dbprint(VMI_DEBUG_EVENTS, "LibVMI wasn't initialized with events!\n");
         return VMI_FAILURE;
@@ -806,7 +800,7 @@ status_t vmi_clear_event(vmi_instance_t vmi, vmi_event_t* event,
 {
     status_t rc = VMI_FAILURE;
 
-    if (!(vmi->init_mode & VMI_INIT_EVENTS))
+    if (!(vmi->init_flags & VMI_INIT_EVENTS))
     {
         return VMI_FAILURE;
     }
@@ -937,7 +931,7 @@ done:
 int vmi_are_events_pending(vmi_instance_t vmi)
 {
 
-    if (!(vmi->init_mode & VMI_INIT_EVENTS))
+    if (!(vmi->init_flags & VMI_INIT_EVENTS))
     {
         return -1;
     }
@@ -950,7 +944,7 @@ int vmi_are_events_pending(vmi_instance_t vmi)
 status_t vmi_events_listen(vmi_instance_t vmi, uint32_t timeout)
 {
 
-    if (!(vmi->init_mode & VMI_INIT_EVENTS))
+    if (!(vmi->init_flags & VMI_INIT_EVENTS))
     {
         return VMI_FAILURE;
     }
@@ -978,7 +972,7 @@ status_t vmi_stop_single_step_vcpu(vmi_instance_t vmi, vmi_event_t* event,
     uint32_t vcpu)
 {
 
-    if (!(vmi->init_mode & VMI_INIT_EVENTS))
+    if (!(vmi->init_flags & VMI_INIT_EVENTS))
     {
         return VMI_FAILURE;
     }
@@ -992,7 +986,7 @@ status_t vmi_stop_single_step_vcpu(vmi_instance_t vmi, vmi_event_t* event,
 status_t vmi_shutdown_single_step(vmi_instance_t vmi)
 {
 
-    if (!(vmi->init_mode & VMI_INIT_EVENTS))
+    if (!(vmi->init_flags & VMI_INIT_EVENTS))
     {
         return VMI_FAILURE;
     }
